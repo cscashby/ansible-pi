@@ -2,6 +2,30 @@
 - set_fact:
     real_ansible_host: "{{ ansible_host }}"
 
+- name: "Configure Authorized Keys"
+  authorized_key:
+    user: pi
+    state: present
+    key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+- name: Updated sshd_config to stop DNS lookups
+  register: ssh_config
+  lineinfile:
+    dest=/etc/ssh/sshd_config
+    regexp="^UseDNS"
+    line="UseDNS no"
+    insertafter=EOF
+    state=present
+
+- name: Restart ssh
+  service:
+    name: ssh
+    state: restarted
+  when: ssh_config.changed
+
+- name: "Update pi user password"
+  user: name="pi" password="{{user_password}}" update_password=always
+
 - name: 'Configure WIFI'
   copy: src=./wpa_supplicant.conf dest=/etc/wpa_supplicant/wpa_supplicant.conf mode=0600
 
@@ -10,6 +34,16 @@
 
 - name: 'Upgrade APT to the lastest packages'
   action: apt upgrade=safe
+
+- name: Ensure hostname set
+  hostname: name={{ inventory_hostname }}
+  when: not inventory_hostname|match('(\d{1,3}\.){3}\d{1,3}')
+
+- name: Ensure hostname is in /etc/hosts
+  lineinfile:
+    dest=/etc/hosts
+    regexp="^127.0.1.1.+$"
+    line="127.0.1.1 {{ ansible_fqdn }} {{ ansible_hostname }}"
 
 - name: 'Reboot'
   shell: sleep 2 && reboot
